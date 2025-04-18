@@ -16,7 +16,7 @@ import numpy as np
 from scipy.stats import norm
 import statsmodels.formula.api as smf
 from sklearn.utils import resample 
-
+from scipy.special import expit as plogis
 
 class IndirectEffectsLogic():  
    def __init__(self):
@@ -32,132 +32,134 @@ class IndirectEffectsLogic():
         }
         return result
 
+   def compute_nnt_effects(self,data, exposure, mediator, outcome, confounders, B=400):
+        A_data = data[exposure].values
+        M_data = data[mediator].values
+        Y_data = data[outcome].values
+        N = len(data)
+    
+        # Confounder values
+        L_data = {conf: data[conf].values for conf in confounders}
+        L_formula = " + ".join(confounders)
+
+        # Regression formulas
+        mediator_formula = f"{mediator} ~ {exposure} + {L_formula}"
+        outcome_formula = f"{outcome} ~ {exposure} + {mediator} + {L_formula}"
+
+        # Bootstrap results storage
+        BS_mat = pd.DataFrame(np.nan, index=range(B), columns=["DNNT", "INNT", "NNT"])
+    
+        for i in range(B):
+            ind = np.random.choice(N, size=N, replace=True)
+            data_b = data.iloc[ind]
+        
+            mediator_model_b = smf.logit(mediator_formula, data=data_b).fit(disp=0)
+            outcome_model_b = smf.logit(outcome_formula, data=data_b).fit(disp=0)
+        
+            mdtr_b = mediator_model_b.params
+            drct_b = outcome_model_b.params
+        
+            # Calculate pimL(L)
+            def pred_pim(a_val):
+                return plogis(
+                    mdtr_b['Intercept'] + 
+                    mdtr_b[exposure] * a_val + 
+                    sum(mdtr_b[conf] * L_data[conf] for conf in confounders)
+                )
+        
+            pimL = pred_pim(1) - pred_pim(0)
+        
+            # Calculate pioML(L)
+            def pred_pio_ml(m_val):
+                return plogis(
+                    drct_b['Intercept'] + 
+                    drct_b[exposure] * 0 + 
+                    drct_b[mediator] * m_val + 
+                    sum(drct_b[conf] * L_data[conf] for conf in confounders)
+                )
+        
+            pioML = pred_pio_ml(1) - pred_pio_ml(0)
+        
+            A0_mask = A_data == 0
+            A1_mask = A_data == 1
+            prop_A0 = np.mean(A0_mask)
+            prop_A1 = np.mean(A1_mask)
+
+            p_i0 = np.mean(pimL[A0_mask]) * np.mean(pioML[A0_mask]) if A0_mask.sum() > 0 else 0
+            p_i1 = np.mean(pimL[A1_mask]) * np.mean(pioML[A1_mask]) if A1_mask.sum() > 0 else 0
+            p_i = p_i0 * prop_A0 + p_i1 * prop_A1
+
+            # pioAM(L)
+            def pred_pio_am(a_val, m_val):
+                return plogis(
+                    drct_b['Intercept'] + 
+                    drct_b[exposure] * a_val + 
+                    drct_b[mediator] * m_val + 
+                    sum(drct_b[conf] * L_data[conf] for conf in confounders)
+                )
+        
+            pioAM0L = pred_pio_am(1, 0) - pred_pio_am(0, 0)
+            pioAM1L = pred_pio_am(1, 1) - pred_pio_am(0, 1)
+        
+            # P(M=1 | A=1, L)
+            P_M1_A1 = pred_pim(1)
+        
+            def mean_am_parts(mask):
+                return (
+                    np.mean(pioAM0L[mask]) * (1 - np.mean(P_M1_A1[mask])) +
+                    np.mean(pioAM1L[mask]) * np.mean(P_M1_A1[mask])
+                ) if mask.sum() > 0 else 0
+        
+            p_d0 = mean_am_parts(A0_mask)
+            p_d1 = mean_am_parts(A1_mask)
+            p_d = p_d0 * prop_A0 + p_d1 * prop_A1
+            p_b = p_i + p_d
+        
+            BS_mat.loc[i, "INNT"] = 1 / p_i if p_i > 0 else np.nan
+            BS_mat.loc[i, "DNNT"] = 1 / p_d if p_d > 0 else np.nan
+            BS_mat.loc[i, "NNT"] = 1 / p_b if p_b > 0 else np.nan
+
+        ci_lower = BS_mat.quantile(0.025)
+        ci_upper = BS_mat.quantile(0.975)
+
+        return {
+            "p_i": round(p_i, 5),
+            "p_d": round(p_d, 5),
+            "p_b": round(p_b, 5),
+            "INNT": round(BS_mat["INNT"].mean(), 2),
+            "DNNT": round(BS_mat["DNNT"].mean(), 2),
+            "NNT": round(BS_mat["NNT"].mean(), 2),
+            "CI_INNT": (round(ci_lower["INNT"], 2), round(ci_upper["INNT"], 2)),
+            "CI_DNNT": (round(ci_lower["DNNT"], 2), round(ci_upper["DNNT"], 2)),
+            "CI_NNT": (round(ci_lower["NNT"], 2), round(ci_upper["NNT"], 2)),
+            "Bootstrap": BS_mat
+        }
 
    def process_results(self, file, confounders, predictor_x, mediator_y, target_variable,mediator_model, target_model):
         
         data = pd.read_csv(file)
 
         confounders_list = eval(confounders)
+        
+        n_iterations = 5
 
-        total_effect, a, b, indirect_effect = self.perform_mediation_analysis(data, confounders_list, predictor_x, mediator_y, target_variable,mediator_model,target_model)
-
-        alpha = 0.05
-        n_iterations = 10
-
-        indirect_ci, direct_ci, total_ci = self.bootstrap_mediation(
-        data, n_iterations=n_iterations, alpha=alpha, confounders=confounders_list, predictor_xm=predictor_x, mediator_ym=mediator_y, target_variable=target_variable,mediator_model = mediator_model,target_model = target_model)
-
-        nnt_median, nnt_ci = self.bootstrap_nnt(data, predictor_xm=predictor_x, target_variable=target_variable, confounders=confounders_list,mediator_model = mediator_model,target_model = target_model, n_iterations=n_iterations, alpha=alpha)
+        result = self.compute_nnt_effects(data=data,
+                                      exposure=predictor_x,
+                                      mediator= mediator_y,
+                                      outcome= target_variable,
+                                      confounders= confounders_list,
+                                      B=n_iterations)
 
         results = {
-            "total_effect": total_effect,
-            "effect_of_smoker_on_overweight": a,
-            "direct_effect": total_effect,
-            "effect_of_overweight_on_heart_disease": b,
-            "indirect_effect": indirect_effect,
-            "indirect_effect_ci": indirect_ci,
-            "direct_effect_ci": direct_ci,
-            "total_effect_ci": total_ci,
-            "nnt": nnt_median,
-            "nnt_confidence_interval": nnt_ci,
+            "indirect_effect": result["p_i"],
+            "total_effect": result["p_d"],
+            "direct_effect": result["p_b"],
+            "innt": result["INNT"],
+            "dnnt": result["DNNT"],
+            "nnt": result["NNT"],
+            "nnt_confidence_interval": result["CI_NNT"],
+            "innt_confidence_interval": result["CI_INNT"],
+            "dnnt_confidence_interval": result["CI_DNNT"],
         }
 
         return results
-
-   def fit_model(self,data, formula, model_type="logistic"):
-    """Fits a regression model using statsmodels."""
-    if model_type == "logistic":
-        return smf.logit(formula, data=data).fit(disp=False)
-    else:
-        return smf.ols(formula, data=data).fit(disp=False)
-
-   def calculate_indirect_effect(self,model_xm, model_ym, predictor_xm, mediator_ym):
-        """Calculates the indirect effect (a*b)."""
-        a = model_xm.params[predictor_xm]
-        b = model_ym.params[mediator_ym]
-        return round(a * b, 2)
-
-   def bootstrap_mediation(self,data, n_iterations, alpha, confounders, predictor_xm, mediator_ym, target_variable, mediator_model, target_model):
-        """Performs bootstrapping to estimate confidence intervals for mediation effects."""
-        indirect_effects, direct_effects, total_effects = [], [], []
-        confounders_formula = ' + '.join(confounders)
-
-        for _ in range(n_iterations):
-            bootstrap_sample = resample(data, replace=True)
-            bootstrap_df = pd.DataFrame(bootstrap_sample, columns=data.columns)
-
-            # Bootstrapped models
-            model_xm_boot = self.fit_model(bootstrap_df, f'{mediator_ym} ~ {predictor_xm} + {confounders_formula}', model_type=mediator_model)
-            model_ym_boot = self.fit_model(bootstrap_df, f'{target_variable} ~ {predictor_xm} + {confounders_formula} + {mediator_ym}', model_type=target_model)
-            model_total_boot = self.fit_model(bootstrap_df, f'{target_variable} ~ {predictor_xm} + {confounders_formula}', model_type=target_model)
-
-            indirect_effect_boot = self.calculate_indirect_effect(model_xm_boot, model_ym_boot, predictor_xm, mediator_ym)
-            direct_effect_boot = model_ym_boot.params[predictor_xm]
-            total_effect_boot = model_total_boot.params[predictor_xm]
-
-            indirect_effects.append(indirect_effect_boot)
-            direct_effects.append(direct_effect_boot)
-            total_effects.append(total_effect_boot)
-
-        # Calculate confidence intervals and round to 2 decimal places
-        lower_ci_indirect = round(np.percentile(indirect_effects, (alpha/2)*100), 2)
-        upper_ci_indirect = round(np.percentile(indirect_effects, (1-alpha/2)*100), 2)
-
-        lower_ci_direct = round(np.percentile(direct_effects, (alpha/2)*100), 2)
-        upper_ci_direct = round(np.percentile(direct_effects, (1-alpha/2)*100), 2)
-
-        lower_ci_total = round(np.percentile(total_effects, (alpha/2)*100), 2)
-        upper_ci_total = round(np.percentile(total_effects, (1-alpha/2)*100), 2)
-
-        return (lower_ci_indirect, upper_ci_indirect), (lower_ci_direct, upper_ci_direct), (lower_ci_total, upper_ci_total)
-
-   def perform_mediation_analysis(self,data, confounders, predictor_xm, mediator_ym, target_variable, mediator_model, target_model):
-        """Performs mediation analysis and returns the effects."""
-    
-        # Total Effect (c) - השתמש במודל שנשלח כפרמטר
-        model_total = self.fit_model(data, f'{target_variable} ~ {predictor_xm} + {" + ".join(confounders)}', model_type=target_model)
-        total_effect = round(model_total.params[predictor_xm], 2)
-
-        # Effect of predictor_xm on mediator_ym (a)
-        model_xm = self.fit_model(data, f'{mediator_ym} ~ {predictor_xm} + {" + ".join(confounders)}', model_type=mediator_model)
-        a = round(model_xm.params[predictor_xm], 2)
-
-        # Direct Effect (c') and Effect of mediator_ym on response (b)
-        model_ym = self.fit_model(data, f'{target_variable} ~ {predictor_xm} + {" + ".join(confounders)} + {mediator_ym}', model_type=target_model)
-        direct_effect = round(model_ym.params[predictor_xm], 2)
-        b = round(model_ym.params[mediator_ym], 2)
-
-        # Indirect Effect (a*b)
-        indirect_effect = round(self.calculate_indirect_effect(model_xm, model_ym, predictor_xm, mediator_ym), 2)
-
-        return total_effect, a, b, indirect_effect
-
-
-   def sigmoid(self,x):
-    return 1 / (1 + np.exp(-x))
-
-
-   def bootstrap_nnt(self,data, predictor_xm, target_variable, confounders,mediator_model, target_model, n_iterations, alpha):
-        """Performs bootstrapping to estimate the Number Needed to Treat (NNT) and its confidence intervals."""
-        nnt_values = []
-        confounders_formula = ' + '.join(confounders)
-
-        for _ in range(n_iterations):
-            bootstrap_sample = resample(data, replace=True)
-            bootstrap_df = pd.DataFrame(bootstrap_sample, columns=data.columns)
-
-            model = self.fit_model(bootstrap_df, f'{target_variable} ~ {predictor_xm} + {confounders_formula}', model_type=target_model)
-        
-            p1 = self.sigmoid(model.params['Intercept'] + model.params[predictor_xm])
-            p0 = self.sigmoid(model.params['Intercept']) 
-
-            if p1 != p0 and (p1 - p0) != 0:
-                nnt = round(1 / abs(p1 - p0), 2)
-                nnt_values.append(nnt)
-
-        lower_ci = round(np.percentile(nnt_values, (alpha/2)*100), 2)
-        upper_ci = round(np.percentile(nnt_values, (1-alpha/2)*100), 2)
-    
-        return round(np.median(nnt_values), 2), (lower_ci, upper_ci)
-
-    
