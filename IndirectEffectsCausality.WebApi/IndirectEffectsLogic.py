@@ -32,7 +32,7 @@ class IndirectEffectsLogic():
         }
         return result
 
-   def compute_nnt_effects(self,data, exposure, mediator, outcome, confounders, B=400):
+   def compute_nnt_effects(self,data, exposure, mediator, outcome, confounders,mediator_model,target_model, B=400):
         A_data = data[exposure].values
         M_data = data[mediator].values
         Y_data = data[outcome].values
@@ -52,9 +52,24 @@ class IndirectEffectsLogic():
         for i in range(B):
             ind = np.random.choice(N, size=N, replace=True)
             data_b = data.iloc[ind]
+
+          
+            if mediator_model == "logistic":
+               mediator_model_b = smf.logit(mediator_formula, data=data_b).fit(disp=0)
+            else:
+               mediator_model_b = smf.probit(mediator_formula, data=data_b).fit(disp=0)
+
+
+
+            if target_model == "logistic":
+               outcome_model_b = smf.logit(mediator_formula, data=data_b).fit(disp=0)
+            else:
+               outcome_model_b = smf.probit(mediator_formula, data=data_b).fit(disp=0)
+
+
         
-            mediator_model_b = smf.logit(mediator_formula, data=data_b).fit(disp=0)
-            outcome_model_b = smf.logit(outcome_formula, data=data_b).fit(disp=0)
+          
+            
         
             mdtr_b = mediator_model_b.params
             drct_b = outcome_model_b.params
@@ -129,9 +144,12 @@ class IndirectEffectsLogic():
             "INNT": round(BS_mat["INNT"].mean(), 2),
             "DNNT": round(BS_mat["DNNT"].mean(), 2),
             "NNT": round(BS_mat["NNT"].mean(), 2),
-            "CI_INNT": (round(ci_lower["INNT"], 2), round(ci_upper["INNT"], 2)),
-            "CI_DNNT": (round(ci_lower["DNNT"], 2), round(ci_upper["DNNT"], 2)),
-            "CI_NNT": (round(ci_lower["NNT"], 2), round(ci_upper["NNT"], 2)),
+            "CI_INNT_LOWER": round(ci_lower["INNT"], 2), 
+            "CI_INNT_UPPER": round(ci_upper["INNT"], 2),
+            "CI_DNNT_LOWER": round(ci_lower["DNNT"], 2),
+            "CI_DNNT_UPPER": round(ci_upper["DNNT"], 2),
+            "CI_NNT_LOWER": round(ci_lower["NNT"], 2),
+            "CI_NNT_UPPER": round(ci_upper["NNT"], 2),
             "Bootstrap": BS_mat
         }
 
@@ -148,6 +166,8 @@ class IndirectEffectsLogic():
                                       mediator= mediator_y,
                                       outcome= target_variable,
                                       confounders= confounders_list,
+                                      mediator_model = mediator_model,
+                                      target_model = target_model,
                                       B=n_iterations)
 
         results = {
@@ -157,9 +177,12 @@ class IndirectEffectsLogic():
             "innt": result["INNT"],
             "dnnt": result["DNNT"],
             "nnt": result["NNT"],
-            "nnt_confidence_interval": result["CI_NNT"],
-            "innt_confidence_interval": result["CI_INNT"],
-            "dnnt_confidence_interval": result["CI_DNNT"],
+            "nnt_confidence_interval_lower": result["CI_NNT_LOWER"],
+            "nnt_confidence_interval_upper": result["CI_NNT_UPPER"],
+            "innt_confidence_interval_lower": result["CI_INNT_LOWER"],
+            "innt_confidence_interval_upper": result["CI_INNT_UPPER"],
+            "dnnt_confidence_interval_lower": result["CI_DNNT_LOWER"],
+            "dnnt_confidence_interval_upper": result["CI_DNNT_UPPER"],
         }
 
         return results
