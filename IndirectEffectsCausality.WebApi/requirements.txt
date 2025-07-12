@@ -9,3 +9,4 @@ seaborn
 requests
 beautifulsoup4
 gunicorn
+scikit-learn
