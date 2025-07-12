@@ -9,6 +9,10 @@ CORS(app)  # Enable CORS for all routes
 indirect_effects_logic = IndirectEffectsLogic();
 
 
+@app.route('/api/healthcheck', methods=['GET'])
+def upload_file():
+    return "i'm alive!";
+
 @app.route('/api/indirectEffects/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
