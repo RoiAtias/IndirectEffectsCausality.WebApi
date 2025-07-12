@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>f7c2b3a9-9f17-4978-8ceb-0a7bab659ea9</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>IndirectEffectsApi.py</StartupFile>
+    <StartupFile>main.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -25,7 +25,7 @@
     <Compile Include="IndirectEffectsLogic.py" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="IndirectEffectsApi.py" />
+    <Content Include="main.py" />
   </ItemGroup>
   <ItemGroup>
     <Interpreter Include="env1\">

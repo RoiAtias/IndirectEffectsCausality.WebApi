@@ -53,23 +53,16 @@ class IndirectEffectsLogic():
             ind = np.random.choice(N, size=N, replace=True)
             data_b = data.iloc[ind]
 
-          
             if mediator_model == "logistic":
                mediator_model_b = smf.logit(mediator_formula, data=data_b).fit(disp=0)
             else:
                mediator_model_b = smf.probit(mediator_formula, data=data_b).fit(disp=0)
 
-
-
             if target_model == "logistic":
-               outcome_model_b = smf.logit(mediator_formula, data=data_b).fit(disp=0)
+               outcome_model_b = smf.logit(outcome_formula, data=data_b).fit(disp=0)
             else:
-               outcome_model_b = smf.probit(mediator_formula, data=data_b).fit(disp=0)
+               outcome_model_b = smf.probit(outcome_formula, data=data_b).fit(disp=0)
 
-
-        
-          
-            
         
             mdtr_b = mediator_model_b.params
             drct_b = outcome_model_b.params
