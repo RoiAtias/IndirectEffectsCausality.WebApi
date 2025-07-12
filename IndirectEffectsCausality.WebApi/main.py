@@ -10,7 +10,7 @@ indirect_effects_logic = IndirectEffectsLogic();
 
 
 @app.route('/api/healthcheck', methods=['GET'])
-def upload_file():
+def healthcheck():
     return "i'm alive!";
 
 @app.route('/api/indirectEffects/upload', methods=['POST'])
