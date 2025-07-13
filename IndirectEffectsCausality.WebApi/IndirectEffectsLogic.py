@@ -32,7 +32,7 @@ class IndirectEffectsLogic():
         }
         return result
 
-   def compute_nnt_effects(self,data, exposure, mediator, outcome, confounders,mediator_model,target_model, B=400):
+   def compute_nnt_effects(self,data, exposure, mediator, outcome, confounders,mediator_model,target_model, B=50):
         A_data = data[exposure].values
         M_data = data[mediator].values
         Y_data = data[outcome].values
