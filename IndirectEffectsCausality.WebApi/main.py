@@ -19,7 +19,7 @@ indirect_effects_logic = IndirectEffectsLogic();
 
 @app.route('/api/healthcheck', methods=['GET'])
 def healthcheck():
-    return "i'm alive!";
+    return jsonify({ "status": "alive" }), 200
 
 @app.route('/api/indirectEffects/upload', methods=['POST'])
 def upload_file():
