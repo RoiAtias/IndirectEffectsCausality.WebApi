@@ -6,7 +6,14 @@ from IndirectEffectsLogic import IndirectEffectsLogic
 
 app = Flask(__name__)
 # CORS(app)  # Enable CORS for all routes
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(
+    app,
+    origins=["https://indirecteffectscausality-client.onrender.com"],
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+    supports_credentials=True
+)
+
 indirect_effects_logic = IndirectEffectsLogic();
 
 
