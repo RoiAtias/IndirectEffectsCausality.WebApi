@@ -22,7 +22,20 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="BootstrapLogic.py" />
     <Compile Include="IndirectEffectsLogic.py" />
+    <Compile Include="SandwichLogic.py" />
+    <Compile Include="test_sandwich_logic.py" />
+    <Compile Include="Valantin\Logit\boxplots_logit.py" />
+    <Compile Include="Valantin\Logit\coverage_rates_logit.py" />
+    <Compile Include="Valantin\Logit\qvec_for_CIs_analytical_logit.py" />
+    <Compile Include="Valantin\Logit\sandwich_covariance_logit.py" />
+    <Compile Include="Valantin\Logit\true_indices_logit.py" />
+    <Compile Include="Valantin\Probit\boxplots_probit.py" />
+    <Compile Include="Valantin\Probit\coverage_rates_probit.py" />
+    <Compile Include="Valantin\Probit\qvec_for_CIs_analytical_probit.py" />
+    <Compile Include="Valantin\Probit\sandwich_covariance_probit.py" />
+    <Compile Include="Valantin\Probit\true_indices_probit.py" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="main.py" />
@@ -40,6 +53,9 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Dataset\" />
+    <Folder Include="Valantin\" />
+    <Folder Include="Valantin\Logit\" />
+    <Folder Include="Valantin\Probit\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
