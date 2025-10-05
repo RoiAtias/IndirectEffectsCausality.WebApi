@@ -43,7 +43,7 @@ class IndirectEffectsLogic():
         n_iterations = 5
 
         # Choose computation method based on ci_method parameter
-        if ci_method == 'bootstrap':
+        if ci_method == 'Bootstrap':
             result = self.bootstrap_logic.compute_nnt_effects(data=data,
                                           exposure=predictor_x,
                                           mediator= mediator_y,
@@ -53,7 +53,7 @@ class IndirectEffectsLogic():
                                           target_model = target_model,
                                           B=n_iterations,
                                           selected_effects=selected_effects_list)
-        elif ci_method == 'sandwich':
+        elif ci_method == 'Sandwich':
             result = self.sandwich_logic.compute_nnt_effects(data=data,
                                           exposure=predictor_x,
                                           mediator= mediator_y,
