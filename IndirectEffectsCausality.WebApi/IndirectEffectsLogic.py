@@ -1,26 +1,11 @@
-﻿import os
-import asyncio
-import logging
-import json
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import re
-import concurrent.futures
-import requests
-from bs4 import BeautifulSoup
-import statsmodels.api as sm
-from statsmodels.formula.api import glm
-from statsmodels.genmod.families import Binomial
-import numpy as np
-from scipy.stats import norm
-import statsmodels.formula.api as smf
-from sklearn.utils import resample 
-from scipy.special import expit as plogis
+﻿import pandas as pd
+from BootstrapLogic import BootstrapLogic
+from SandwichLogic import SandwichLogic
 
 class IndirectEffectsLogic():  
    def __init__(self):
-      logging.getLogger('asyncio').setLevel(logging.WARNING)
+      self.bootstrap_logic = BootstrapLogic()
+      self.sandwich_logic = SandwichLogic()
 
    def process_csv_file(self, file):
         df = pd.read_csv(file)
@@ -32,150 +17,110 @@ class IndirectEffectsLogic():
         }
         return result
 
-   def compute_nnt_effects(self,data, exposure, mediator, outcome, confounders,mediator_model,target_model, B=1):
-        A_data = data[exposure].values
-        M_data = data[mediator].values
-        Y_data = data[outcome].values
-        N = len(data)
-    
-        # Confounder values
-        L_data = {conf: data[conf].values for conf in confounders}
-        L_formula = " + ".join(confounders)
-
-        # Regression formulas
-        mediator_formula = f"{mediator} ~ {exposure} + {L_formula}"
-        outcome_formula = f"{outcome} ~ {exposure} + {mediator} + {L_formula}"
-
-        # Bootstrap results storage
-        BS_mat = pd.DataFrame(np.nan, index=range(B), columns=["DNNT", "INNT", "NNT"])
-    
-        for i in range(B):
-            ind = np.random.choice(N, size=N, replace=True)
-            data_b = data.iloc[ind]
-
-            if mediator_model == "logistic":
-               mediator_model_b = smf.logit(mediator_formula, data=data_b).fit(disp=0)
-            else:
-               mediator_model_b = smf.probit(mediator_formula, data=data_b).fit(disp=0)
-
-            if target_model == "logistic":
-               outcome_model_b = smf.logit(outcome_formula, data=data_b).fit(disp=0)
-            else:
-               outcome_model_b = smf.probit(outcome_formula, data=data_b).fit(disp=0)
-
-        
-            mdtr_b = mediator_model_b.params
-            drct_b = outcome_model_b.params
-        
-            # Calculate pimL(L)
-            def pred_pim(a_val):
-                return plogis(
-                    mdtr_b['Intercept'] + 
-                    mdtr_b[exposure] * a_val + 
-                    sum(mdtr_b[conf] * L_data[conf] for conf in confounders)
-                )
-        
-            pimL = pred_pim(1) - pred_pim(0)
-        
-            # Calculate pioML(L)
-            def pred_pio_ml(m_val):
-                return plogis(
-                    drct_b['Intercept'] + 
-                    drct_b[exposure] * 0 + 
-                    drct_b[mediator] * m_val + 
-                    sum(drct_b[conf] * L_data[conf] for conf in confounders)
-                )
-        
-            pioML = pred_pio_ml(1) - pred_pio_ml(0)
-        
-            A0_mask = A_data == 0
-            A1_mask = A_data == 1
-            prop_A0 = np.mean(A0_mask)
-            prop_A1 = np.mean(A1_mask)
-
-            p_i0 = np.mean(pimL[A0_mask]) * np.mean(pioML[A0_mask]) if A0_mask.sum() > 0 else 0
-            p_i1 = np.mean(pimL[A1_mask]) * np.mean(pioML[A1_mask]) if A1_mask.sum() > 0 else 0
-            p_i = p_i0 * prop_A0 + p_i1 * prop_A1
-
-            # pioAM(L)
-            def pred_pio_am(a_val, m_val):
-                return plogis(
-                    drct_b['Intercept'] + 
-                    drct_b[exposure] * a_val + 
-                    drct_b[mediator] * m_val + 
-                    sum(drct_b[conf] * L_data[conf] for conf in confounders)
-                )
-        
-            pioAM0L = pred_pio_am(1, 0) - pred_pio_am(0, 0)
-            pioAM1L = pred_pio_am(1, 1) - pred_pio_am(0, 1)
-        
-            # P(M=1 | A=1, L)
-            P_M1_A1 = pred_pim(1)
-        
-            def mean_am_parts(mask):
-                return (
-                    np.mean(pioAM0L[mask]) * (1 - np.mean(P_M1_A1[mask])) +
-                    np.mean(pioAM1L[mask]) * np.mean(P_M1_A1[mask])
-                ) if mask.sum() > 0 else 0
-        
-            p_d0 = mean_am_parts(A0_mask)
-            p_d1 = mean_am_parts(A1_mask)
-            p_d = p_d0 * prop_A0 + p_d1 * prop_A1
-            p_b = p_i + p_d
-        
-            BS_mat.loc[i, "INNT"] = 1 / p_i if p_i > 0 else np.nan
-            BS_mat.loc[i, "DNNT"] = 1 / p_d if p_d > 0 else np.nan
-            BS_mat.loc[i, "NNT"] = 1 / p_b if p_b > 0 else np.nan
-
-        ci_lower = BS_mat.quantile(0.025)
-        ci_upper = BS_mat.quantile(0.975)
-
-        return {
-            "p_i": round(p_i, 5),
-            "p_d": round(p_d, 5),
-            "p_b": round(p_b, 5),
-            "INNT": round(BS_mat["INNT"].mean(), 2),
-            "DNNT": round(BS_mat["DNNT"].mean(), 2),
-            "NNT": round(BS_mat["NNT"].mean(), 2),
-            "CI_INNT_LOWER": round(ci_lower["INNT"], 2), 
-            "CI_INNT_UPPER": round(ci_upper["INNT"], 2),
-            "CI_DNNT_LOWER": round(ci_lower["DNNT"], 2),
-            "CI_DNNT_UPPER": round(ci_upper["DNNT"], 2),
-            "CI_NNT_LOWER": round(ci_lower["NNT"], 2),
-            "CI_NNT_UPPER": round(ci_upper["NNT"], 2),
-            "Bootstrap": BS_mat
-        }
-
-   def process_results(self, file, confounders, predictor_x, mediator_y, target_variable,mediator_model, target_model):
+   def process_results(self, file, confounders, predictor_x, mediator_y, target_variable, mediator_model, target_model, ci_method, selected_effects=None):
         
         data = pd.read_csv(file)
 
         confounders_list = eval(confounders)
         
+        # Parse selected effects if provided
+        selected_effects_list = []
+        if selected_effects:
+            try:
+                import json
+                selected_effects_list = json.loads(selected_effects)
+                print(f"Selected effects to calculate: {selected_effects_list}")
+            except:
+                try:
+                    selected_effects_list = eval(selected_effects)
+                    print(f"Selected effects to calculate (via eval): {selected_effects_list}")
+                except:
+                    selected_effects_list = []  # Default to all effects if parsing fails
+                    print("Could not parse selected_effects, calculating all effects")
+        else:
+            print("No selected_effects provided, calculating all effects")
+        
         n_iterations = 5
 
-        result = self.compute_nnt_effects(data=data,
-                                      exposure=predictor_x,
-                                      mediator= mediator_y,
-                                      outcome= target_variable,
-                                      confounders= confounders_list,
-                                      mediator_model = mediator_model,
-                                      target_model = target_model,
-                                      B=n_iterations)
+        # Choose computation method based on ci_method parameter
+        if ci_method == 'Bootstrap':
+            result = self.bootstrap_logic.compute_nnt_effects(data=data,
+                                          exposure=predictor_x,
+                                          mediator= mediator_y,
+                                          outcome= target_variable,
+                                          confounders= confounders_list,
+                                          mediator_model = mediator_model,
+                                          target_model = target_model,
+                                          B=n_iterations,
+                                          selected_effects=selected_effects_list)
+        elif ci_method == 'Sandwich':
+            result = self.sandwich_logic.compute_nnt_effects(data=data,
+                                          exposure=predictor_x,
+                                          mediator= mediator_y,
+                                          outcome= target_variable,
+                                          confounders= confounders_list,
+                                          mediator_model = mediator_model,
+                                          target_model = target_model,
+                                          selected_effects=selected_effects_list)
+        else:
+            # Default to bootstrap if method is not recognized
+            result = self.bootstrap_logic.compute_nnt_effects(data=data,
+                                          exposure=predictor_x,
+                                          mediator= mediator_y,
+                                          outcome= target_variable,
+                                          confounders= confounders_list,
+                                          mediator_model = mediator_model,
+                                          target_model = target_model,
+                                          B=n_iterations,
+                                          selected_effects=selected_effects_list)
 
+        # Enhanced results dictionary with all NNT measures - use get() for optional values
         results = {
+            # Original results maintained for backward compatibility
             "indirect_effect": result["p_i"],
-            "total_effect": result["p_d"],
-            "direct_effect": result["p_b"],
-            "innt": result["INNT"],
-            "dnnt": result["DNNT"],
-            "nnt": result["NNT"],
-            "nnt_confidence_interval_lower": result["CI_NNT_LOWER"],
-            "nnt_confidence_interval_upper": result["CI_NNT_UPPER"],
-            "innt_confidence_interval_lower": result["CI_INNT_LOWER"],
-            "innt_confidence_interval_upper": result["CI_INNT_UPPER"],
-            "dnnt_confidence_interval_lower": result["CI_DNNT_LOWER"],
-            "dnnt_confidence_interval_upper": result["CI_DNNT_UPPER"],
+            "total_effect": result["p_d"],  # Note: this was mislabeled before
+            "direct_effect": result["p_b"], # Note: this was mislabeled before
+            "innt": result.get("INNT"),
+            "dnnt": result.get("DNNT"),
+            "nnt": result.get("NNT"),
+            "nnt_confidence_interval_lower": result.get("CI_NNT_LOWER"),
+            "nnt_confidence_interval_upper": result.get("CI_NNT_UPPER"),
+            "innt_confidence_interval_lower": result.get("CI_INNT_LOWER"),
+            "innt_confidence_interval_upper": result.get("CI_INNT_UPPER"),
+            "dnnt_confidence_interval_lower": result.get("CI_DNNT_LOWER"),
+            "dnnt_confidence_interval_upper": result.get("CI_DNNT_UPPER"),
+            
+            # Enhanced results with exposure group-specific measures
+            "indirect_effect_a0": result["p_i0"],
+            "indirect_effect_a1": result["p_i1"],
+            "direct_effect_a0": result["p_d0"],
+            "direct_effect_a1": result["p_d1"],
+            
+            # Additional NNT measures
+            "inne": result.get("INNE"),  # Indirect Number Needed to Expose (A=0)
+            "iein": result.get("IEIN"),  # Indirect Effect when Intervening (A=1)
+            "dnne": result.get("DNNE"),  # Direct Number Needed to Expose (A=0)
+            "dein": result.get("DEIN"),  # Direct Effect when Intervening (A=1)
+            "nne": result.get("NNE"),    # Total Number Needed to Expose (A=0)
+            "ein": result.get("EIN"),    # Total Effect when Intervening (A=1)
+            
+            # Confidence intervals for additional measures
+            "inne_confidence_interval_lower": result.get("CI_INNE_LOWER"),
+            "inne_confidence_interval_upper": result.get("CI_INNE_UPPER"),
+            "iein_confidence_interval_lower": result.get("CI_IEIN_LOWER"),
+            "iein_confidence_interval_upper": result.get("CI_IEIN_UPPER"),
+            "dnne_confidence_interval_lower": result.get("CI_DNNE_LOWER"),
+            "dnne_confidence_interval_upper": result.get("CI_DNNE_UPPER"),
+            "dein_confidence_interval_lower": result.get("CI_DEIN_LOWER"),
+            "dein_confidence_interval_upper": result.get("CI_DEIN_UPPER"),
+            "nne_confidence_interval_lower": result.get("CI_NNE_LOWER"),
+            "nne_confidence_interval_upper": result.get("CI_NNE_UPPER"),
+            "ein_confidence_interval_lower": result.get("CI_EIN_LOWER"),
+            "ein_confidence_interval_upper": result.get("CI_EIN_UPPER"),
+            
+            # Add method indicator to results
+            "ci_method_used": ci_method if ci_method in ['bootstrap', 'sandwich'] else 'bootstrap',
+            "selected_effects": selected_effects_list  # Return what was selected for debugging
         }
 
         return results

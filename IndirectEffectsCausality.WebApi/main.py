@@ -5,17 +5,16 @@ import os
 from IndirectEffectsLogic import IndirectEffectsLogic
 
 app = Flask(__name__)
-# CORS(app)  # Enable CORS for all routes
-CORS(
-    app,
-    origins=["https://indirecteffectscausality-client.onrender.com"],
-    methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
-    supports_credentials=True
-)
+CORS(app)  # Enable CORS for all routes
+# CORS(
+#     app,
+#     origins=["https://indirecteffectscausality-client.onrender.com"],
+#     methods=["GET", "POST", "OPTIONS"],
+#     allow_headers=["Content-Type"],
+#     supports_credentials=True
+# )
 
-indirect_effects_logic = IndirectEffectsLogic();
-
+indirect_effects_logic = IndirectEffectsLogic()
 
 @app.route('/api/healthcheck', methods=['GET'])
 def healthcheck():
@@ -49,9 +48,11 @@ def send_results():
     target_variable = request.form.get('targetVariable')
     mediator_model = request.form.get('mediatorModel')
     target_model = request.form.get('targetModel')
+    ci_method = request.form.get('ciMethod')
+    selected_effects = request.form.get('selectedEffects')
 
     try:
-        result = indirect_effects_logic.process_results(file, confounders, predictor_x, mediator_y, target_variable,mediator_model,target_model)
+        result = indirect_effects_logic.process_results(file, confounders, predictor_x, mediator_y, target_variable, mediator_model, target_model, ci_method, selected_effects)
         return jsonify({'message': 'Results processed successfully', 'data': result}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
