@@ -463,7 +463,7 @@ class SandwichLogic():
                 print(f"Sandwich - Computing only selected effects: {effects_to_compute}")
             else:
                 # Default: compute all effects
-                effects_to_compute = {"DNNT", "INNT", "NNT", "DNNE", "IEIN", "INNE", "DEIN", "EIN"}
+                effects_to_compute = {"DNNT", "INNT", "NNT", "DNNE", "IEIN", "INNE", "DEIN", "EIN", "NNE"}
                 print("Sandwich - Computing all effects")
             
             # Extract data arrays
@@ -674,15 +674,27 @@ class SandwichLogic():
                     est = sol_x[param_idx]
                     se = np.sqrt(abs(sand[param_idx, param_idx]))  # Use abs to handle negative variance
                     
-                    if est >= 1 and not np.isnan(est) and not np.isinf(est):
-                        ci_lower = max(est - 1.96*se, 1)
+                    # Handle both positive and negative estimates properly
+                    if not np.isnan(est) and not np.isinf(est) and abs(est) >= 1:
+                        # For positive estimates, ensure CI lower bound is at least 1
+                        if est > 0:
+                            ci_lower = max(est - 1.96*se, 1)
+                            ci_upper = est + 1.96*se
+                        # For negative estimates, allow negative confidence intervals
+                        else:
+                            ci_lower = est - 1.96*se
+                            ci_upper = min(est + 1.96*se, -1)  # Ensure upper bound is at most -1
+                    elif not np.isnan(est) and not np.isinf(est) and abs(est) > 0.001:
+                        # For small estimates (close to zero but not exactly zero)
+                        ci_lower = est - 1.96*se
                         ci_upper = est + 1.96*se
                     else:
+                        # For estimates close to zero or invalid, set to None
                         ci_lower = np.inf
                         ci_upper = np.inf
                     
                     ci_results[name] = est
-                    # Apply rounding to 2 decimal places for confidence intervals, same as Bootstrap
+                    # Apply rounding to 2 decimal places for confidence intervals
                     ci_results[f"CI_{name}_LOWER"] = round(ci_lower, 2) if not np.isinf(ci_lower) else None
                     ci_results[f"CI_{name}_UPPER"] = round(ci_upper, 2) if not np.isinf(ci_upper) else None
                 else:
