@@ -1,28 +1,16 @@
 import pandas as pd
-import os
-import asyncio
-import logging
-import json
-import matplotlib.pyplot as plt
-import seaborn as sns
-import re
-import concurrent.futures
-import requests
-from bs4 import BeautifulSoup
-import statsmodels.api as sm
-from statsmodels.formula.api import glm
-from statsmodels.genmod.families import Binomial
 import numpy as np
 from scipy.stats import norm
 import statsmodels.formula.api as smf
-from sklearn.utils import resample 
 from scipy.special import expit as plogis
 from scipy.optimize import root
 from numpy.linalg import inv
+import warnings
+warnings.filterwarnings('ignore')
 
 class SandwichLogic():  
     def __init__(self):
-        logging.getLogger('asyncio').setLevel(logging.WARNING)
+      pass
 
     def qvec2_vectorized(self, x, Y, A, M, L, mediator_model, target_model):
         """
@@ -632,28 +620,28 @@ class SandwichLogic():
         }
 
 def process_results(file):
-    """
-    Test function for SandwichLogic with fixed parameters
+"""
+Test function for SandwichLogic with panss8.csv data
     
-    Parameters:
-    -----------
-    file : str
-        Path to the CSV file URL
+Parameters:
+-----------
+file : str
+    Path to the CSV file
     
-    Returns:
-    --------
-    dict
-        Dictionary containing all NNT measures and confidence intervals
-    """
+Returns:
+--------
+dict
+    Dictionary containing all NNT measures and confidence intervals
+"""
     
-    # Fixed parameters as requested
-    confounders = ["sex", "age"]
-    predictor_x = "smoker"
-    mediator_y = "overweight"
-    target_variable = "HeartDiseaseorAttack"
-    mediator_model = "logistic"
-    target_model = "logistic"
-    ci_method = "sandwich"
+# Updated parameters to match panss8.csv data
+confounders = ["Age", "Male"]
+predictor_x = "Treatment"
+mediator_y = "PANSS_DIH"
+target_variable = "PSP_DIH"
+mediator_model = "logistic"
+target_model = "logistic"
+ci_method = "sandwich"
     
     print(f"Processing file: {file}")
     print(f"Using Sandwich method with the following parameters:")
@@ -667,12 +655,16 @@ def process_results(file):
     print("-" * 50)
     
     try:
-        # Load the data
-        data = pd.read_csv(file)
-        print(f"Data loaded successfully. Shape: {data.shape}")
-        
-        # Create SandwichLogic instance with all the logic embedded
-        sandwich_logic = SandwichLogic()
+    # Load the data
+    data = pd.read_csv("IndirectEffectsCausality.WebApi/panss8.csv")
+    print(f"Data loaded successfully. Shape: {data.shape}")
+    
+    # Clean the data - remove empty rows
+    data = data.dropna(subset=['Treatment', 'Age', 'Male', 'PANSS_DIH', 'PSP_DIH'])
+    print(f"After cleaning: {data.shape}")
+    
+    # Create SandwichLogic instance with all the logic embedded
+    sandwich_logic = SandwichLogic()
         
         # Process the data using SandwichLogic
         result = sandwich_logic.compute_nnt_effects(
